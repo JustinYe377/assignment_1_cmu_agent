@@ -16,6 +16,7 @@ from typing import Any
 
 from dotenv import load_dotenv
 from openai import OpenAI
+import yaml
 
 from assignment.env import Environment
 from assignment.agent.tools import INVOKE_SKILL_TOOL
@@ -157,15 +158,50 @@ class Agent:
     def load_skills(self, skills_path: Path) -> dict[str, dict[str, str]]:
         """Load the skill folders exposed to this agent."""
 
-        # TODO(1.4): Validate ``skills_path``, discover one ``SKILL.md``
-        # per child directory, parse its YAML frontmatter (what's between the
-        # `---` tags at the head of the file), and return a mapping
-        # keyed by the frontmatter ``name``. Each value must contain a concise
-        # ``metadata`` string for the model's skill catalog and the complete
-        # ``content`` of the skill file for ``invoke_skill``. Reject duplicate
-        # names and malformed or missing frontmatter with a clear
-        # ``ValueError``.
-        raise NotImplementedError
+        if not skills_path.is_dir():
+            raise ValueError(f"Skills path must be an existing directory: {skills_path}")
+
+        skills = {}
+        for directory in sorted(skills_path.iterdir()):
+            if not directory.is_dir():
+                continue
+            skill_file = directory / "SKILL.md"
+            try:
+                content = skill_file.read_text(encoding="utf-8")
+            except (OSError, UnicodeError) as exc:
+                raise ValueError(f"Cannot read skill file: {skill_file}") from exc
+
+            lines = content.splitlines()
+            if not lines or lines[0].strip() != "---":
+                raise ValueError(f"Missing YAML frontmatter: {skill_file}")
+            end = next(
+                (index for index in range(1, len(lines)) if lines[index].strip() == "---"),
+                None,
+            )
+            if end is None:
+                raise ValueError(f"Unclosed YAML frontmatter: {skill_file}")
+            try:
+                frontmatter = yaml.safe_load("\n".join(lines[1:end]))
+            except yaml.YAMLError as exc:
+                raise ValueError(f"Malformed YAML frontmatter: {skill_file}") from exc
+            if not isinstance(frontmatter, dict) or any(
+                not isinstance(frontmatter.get(key), str)
+                or not frontmatter[key].strip()
+                for key in ("name", "description")
+            ):
+                raise ValueError(
+                    f"Skill frontmatter requires non-empty string name and description: {skill_file}"
+                )
+
+            name = frontmatter["name"].strip()
+            if name in skills:
+                raise ValueError(f"Duplicate skill name {name!r}: {skill_file}")
+            description = " ".join(frontmatter["description"].split())
+            skills[name] = {
+                "metadata": f"name: {name}\ndescription: {description}",
+                "content": content,
+            }
+        return skills
 
     def query_language_model(self) -> dict[str, Any]:
         """Send one tool-enabled Chat Completions request and normalize it."""

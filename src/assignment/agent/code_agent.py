@@ -66,8 +66,14 @@ class CodeAgent(Agent):
         )
         self.task_prompt = self.task
 
-        # TODO(1.4): If any skills are available to the agent, make their
-        # descriptions/metadata available to the agent in the prompt.
+        if self.skills:
+            catalog = "\n\n".join(skill["metadata"] for skill in self.skills.values())
+            self.system_prompt += (
+                "\n\nAvailable skills:\n"
+                "Call invoke_skill with the catalog name before starting work "
+                "covered by a skill, and follow its full instructions.\n"
+                f"{catalog}"
+            )
 
     def execute_tool_calls(
         self, tool_calls: list[dict[str, Any]]
@@ -96,6 +102,13 @@ class CodeAgent(Agent):
                     ):
                         raise ValueError("command must be a string or a list of strings.")
                     content = format_tool_output(self.env.execute(**arguments))
+                elif name == "invoke_skill" and self.skills:
+                    if set(arguments) != {"name"} or not isinstance(arguments["name"], str):
+                        raise ValueError("invoke_skill requires a string name.")
+                    skill_name = arguments["name"]
+                    if skill_name not in self.skills:
+                        raise ValueError(f"Unknown skill: {skill_name}")
+                    content = self.skills[skill_name]["content"]
                 elif name == "send_message":
                     if set(arguments) != {"summary"} or not isinstance(
                         arguments["summary"], str
