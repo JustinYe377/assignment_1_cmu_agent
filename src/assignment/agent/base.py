@@ -321,20 +321,25 @@ class Agent:
         """Run ReAct steps, always saving the trajectory and stopping Modal."""
 
         try:
-            # TODO(1.2) Run the ReAct loop. Orchestrate the sequence of
-            # prompting the language model to produce reasoning and actions,
-            # extracting the tool calls produced by the model, and executing
-            # the tool calls to obtain the agent's observation for the next
-            # step. Ensure you identify when the agent has completed the task
-            # by setting `Agent.finished`. If the agent exceeds the
-            # `step_limit`, raise `StepLimitError`.
+            while not self.finished:
+                if self.steps_taken >= self.step_limit:
+                    raise StepLimitError(
+                        f"Agent reached its step limit of {self.step_limit}."
+                    )
 
-            # TODO(2.2) Call `maybe_compact_context()` before each new action
-            # request in your shared loop. It already estimates active tokens
-            # and handles the threshold, and tracks compaction events for
-            # logging.
+                # TODO(2.2): Call maybe_compact_context() before requesting
+                # the next action.
 
-            raise NotImplementedError
+                message = self.query_language_model()
+                self.history.append(message)
+
+                tool_calls = message.get("tool_calls") or []
+                if tool_calls:
+                    observations = self.execute_tool_calls(tool_calls)
+                    self.history.extend(observations)
+                # The domain-specific executor sets finished when its task
+                # is complete. A text-only response is preserved and the
+                # loop continues; it is not a completion signal.
         finally:
             # This block is provided infrastructure. Do not modify it: a
             # trajectory is required even when a run fails.
