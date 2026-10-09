@@ -9,6 +9,7 @@ from assignment.agent.base import (
     DEFAULT_COMPACTION_KEEP_RECENT_STEPS,
     DEFAULT_COMPACTION_MAX_TOKENS,
     Agent,
+    format_tool_output,
 )
 from assignment.agent.tools import EXECUTE_TOOL, SEND_MESSAGE_TOOL
 from assignment.env import Environment
@@ -43,8 +44,7 @@ class CodeAgent(Agent):
         self.task = task
         self.submitted_patch = ""
 
-        # TODO(Part 1.3): Make the `execute` and `send_message` tools available
-        # to the agent.
+        self.tools.extend([EXECUTE_TOOL, SEND_MESSAGE_TOOL])
 
         system_information = {
             "machine": self.env.machine,
@@ -74,8 +74,48 @@ class CodeAgent(Agent):
     ) -> list[dict[str, str]]:
         """Execute ``execute`` and ``send_message`` calls in the code sandbox."""
 
-        # TODO(Part 1.3): Parse each call, execute recognized tools, and return
-        # one message per call (there may be multiple tool calls in one agent
-        # response!). Malformed JSON and unknown tools must become recoverable
-        # observations relayed to the agent instead of exceptions.
-        raise NotImplementedError
+        observations = []
+        for call in tool_calls:
+            try:
+                if self.finished:
+                    raise ValueError("The task has already been submitted.")
+                function = call["function"]
+                name = function["name"]
+                arguments = json.loads(function["arguments"])
+                if not isinstance(arguments, dict):
+                    raise ValueError("Tool arguments must be a JSON object.")
+
+                if name == "execute":
+                    allowed = {"command", "shell", "cwd", "timeout", "env"}
+                    if arguments.keys() - allowed:
+                        raise ValueError("Unexpected execute arguments.")
+                    command = arguments.get("command")
+                    if not isinstance(command, str) and not (
+                        isinstance(command, list)
+                        and all(isinstance(item, str) for item in command)
+                    ):
+                        raise ValueError("command must be a string or a list of strings.")
+                    content = format_tool_output(self.env.execute(**arguments))
+                elif name == "send_message":
+                    if set(arguments) != {"summary"} or not isinstance(
+                        arguments["summary"], str
+                    ):
+                        raise ValueError("send_message requires a string summary.")
+                    print(arguments["summary"], flush=True)
+                    self.finished = True
+                    content = "Message delivered. Task finished."
+                else:
+                    raise ValueError(f"Unknown tool: {name}")
+            except Exception as exc:
+                content = format_tool_output(
+                    {"error": f"{type(exc).__name__}: {exc}"}
+                )
+
+            observations.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": call["id"],
+                    "content": content,
+                }
+            )
+        return observations
