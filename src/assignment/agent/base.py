@@ -389,8 +389,7 @@ class Agent:
                         f"Agent reached its step limit of {self.step_limit}."
                     )
 
-                # TODO(2.2): Call maybe_compact_context() before requesting
-                # the next action.
+                self.maybe_compact_context()
 
                 message = self.query_language_model()
                 self.history.append(message)
