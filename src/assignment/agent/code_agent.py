@@ -46,8 +46,26 @@ class CodeAgent(Agent):
         # TODO(Part 1.3): Make the `execute` and `send_message` tools available
         # to the agent.
 
-        # TODO(1.1.b): Construct the system prompt and task_prompt. These
-        # should be usable by the `Agent.build_prompt` method.
+        system_information = {
+            "machine": self.env.machine,
+            "release": self.env.release,
+            "system": self.env.system,
+            "version": self.env.version,
+        }
+        self.system_prompt = (
+            "You are a coding agent solving a software issue in a remote terminal environment.\n"
+            "Inspect the repository and relevant instructions, reproduce the reported "
+            "failure, make a focused fix, and verify it with appropriate tests.\n"
+            "Use tool results as evidence, and investigate failures before deciding "
+            "your next action. Do not claim success without verification.\n"
+            f"The default working directory is {self.env.cwd}. Each command runs "
+            "in a new subshell; use cwd and env arguments when needed.\n"
+            "<system_information>\n"
+            f"{json.dumps(system_information, indent=2)}\n"
+            "</system_information>"
+        )
+        self.task_prompt = self.task
+
         # TODO(1.4): If any skills are available to the agent, make their
         # descriptions/metadata available to the agent in the prompt.
 
