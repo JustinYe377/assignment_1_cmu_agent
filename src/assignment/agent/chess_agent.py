@@ -106,7 +106,7 @@ class ChessAgent(Agent):
             compaction_max_tokens=compaction_max_tokens,
         )
 
-        # TODO(Part 3): Register the play_move tool schema from tools.py.
+        self.tools.append(PLAY_MOVE_TOOL)
 
         if programmatic_tools:
             self.tools.append(RUN_PYTHON_TOOL)
@@ -163,18 +163,34 @@ class ChessAgent(Agent):
     ) -> list[dict[str, str]]:
         """Execute model-generated ``play_move`` calls against the chess API."""
 
-        # TODO(Part 3.1):
-        # 1. Dispatch on the function name, and ignore a tool this agent did
-        #    not register.
-        # 2. Hand the raw arguments to the matching chess_tools helper, with
-        #    self.chess_client as its first argument. Each helper takes the
-        #    client explicitly so the same code can run inside the sandbox.
-        # 3. Format a played move with self.format_state, then update
-        #    last_state and finished.
-        # 4. Link every observation to its call with tool_call_id.
-        # 5. Turn malformed, unknown, rejected, or extra parallel calls into
-        #    recoverable <chess_error> observations instead of crashing.
-
         # TODO(Part 3.3-4): add cases for simulate_move and run_python, with
         # linked observations and recoverable errors, just like the old tool.
-        raise NotImplementedError
+        observations = []
+        move_attempted = False
+        registered = {tool["function"]["name"] for tool in self.tools}
+        for call in tool_calls:
+            try:
+                function = call["function"]
+                name = function["name"]
+                if name not in registered or name != "play_move":
+                    raise ValueError(f"Unknown or unsupported tool: {name}")
+                if self.finished:
+                    raise ValueError("The game is already over.")
+                if move_attempted:
+                    raise ValueError(
+                        "Only one play_move call is allowed per assistant turn. "
+                        "Choose the next move from the updated state."
+                    )
+                move_attempted = True
+                content = _play_move(self.chess_client, function["arguments"])
+                if not content.startswith("<chess_error>"):
+                    state = json.loads(content)
+                    content = self.format_state(state)
+                    self.last_state = state
+                    self.finished = bool(state.get("game_over"))
+            except Exception as exc:
+                content = f"<chess_error>{type(exc).__name__}: {exc}</chess_error>"
+            observations.append(
+                {"role": "tool", "tool_call_id": call["id"], "content": content}
+            )
+        return observations
